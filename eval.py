@@ -1,6 +1,7 @@
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('model')
+parser.add_argument('--datadir', default='/data')
 args = parser.parse_args()
 
 import torch
@@ -12,7 +13,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 ########################## DATA ##########################
 
-ds = mydata.DiscretizeTopView(mydata.KITTI('/data'), (512, 512))
+ds = mydata.DiscretizeTopView(mydata.KITTI(args.datadir), (512, 512))
 tr = torch.utils.data.DataLoader(ds, 16, True, collate_fn=od.utils.collate_fn)
 
 ########################## MODEL ##########################

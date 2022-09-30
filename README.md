@@ -9,7 +9,7 @@ For the time being, this implementation is merely educational. It has not been t
 * `train.py FILENAME` to train the model (saves to the given filename)
 * `eval.py FILENAME` to evaluate the model (loads from a given filename)
 
-**To improve:** (1) the fact that PIXOR uses angular bounding-boxes means that NMS and metrics must be optimized for that, but not sure if the PIXOR authors take it in consideration since the effect will be small, (2) the model/losses/etc require a little love to make this authentic; simple things related to the architecture, the fact that I am using CE instead of Focal Loss w/ smoothness, and possibly other small details.
+**To improve:** (1) the fact that PIXOR uses angular bounding-boxes means that NMS and metrics must be optimized for that, but not sure if the PIXOR authors take it in consideration since the effect will be small, (2) the model/losses/etc require a little love to make this authentic; simple things related to the architecture, the fact that I am using CE instead of Focal Loss w/ smoothness, and possibly other small details, namely the values of the various parameters.
 
 ![](picture.png)
 
