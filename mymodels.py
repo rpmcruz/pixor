@@ -23,6 +23,7 @@ def inv_grid_angles(hasobjs, angles):
 
 class Pixor(torch.nn.Module):
     def __init__(self):
+        # FIXME: this architecture is not exactly like PIXOR (it's easy to change though; consider that your homework ;-))
         super().__init__()
         resnet = torchvision.models.resnet50()
         self.backbone = torch.nn.Sequential(*list(resnet.children())[:-2])
@@ -32,7 +33,7 @@ class Pixor(torch.nn.Module):
         self.angles = torch.nn.Conv2d(96, 2, 1)
 
     def forward(self, x, threshold=0.5):
-        x = x.repeat(1, 3, 1, 1)  # FIXME: this hack is due to our backbone being made for 3-channel images
+        x = x.repeat(1, 3, 1, 1)  # FIXME: this hack is due to the backbone I used is for for 3-channel images
         x = self.backbone(x)
         x = self.header(x)
         scores = self.scores(x)
