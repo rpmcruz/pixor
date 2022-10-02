@@ -12,7 +12,7 @@ The two most important parts of the implementation are: (1) the input transforma
 
 ## TO DO
 
-Some things are unclear from the paper. I comment what these are in the code. When unclear, I went with my best guess based on the cited papers said, including the subsequent paper [HDNET](http://proceedings.mlr.press/v87/yang18b/yang18b.pdf) from the same authors. I did not quite understand the exact number of neurons to use from the paper architecture diagram; when undecided, I went with the smallest choice. Let me know if you make any improvements.
+Some things are unclear from the paper. I comment what these are in the code. When unclear, I went with my best guess based on the cited papers, including the subsequent paper [HDNET](http://proceedings.mlr.press/v87/yang18b/yang18b.pdf) from the same authors. I did not quite understand the exact number of neurons to use from the paper architecture diagram; when undecided, I went with the smallest choice. Let me know if you make any improvements.
 
 **Lacking:** (1) we do not yet implement NMS since the IoU is a little tricky because of the angular bounding boxes, (2) no metrics are implemented for the same reason, but KITTI website has evaluation code you can use.
 
