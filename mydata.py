@@ -3,24 +3,7 @@ import numpy as np
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
-
-def truncate_points(points, mins, maxs):
-    ix = np.logical_and(
-        np.all(points >= mins, 0),
-        np.all(points <= maxs, 0))
-    return points[:, ix]
-
-def project_velodyne_to_camera(points, R0, Tvelo_cam):
-    return R0 @ Tvelo_cam @ points
-
-def plot_topview(image, bboxes, angles):
-    h, w = image.shape
-    plt.imshow(image, vmin=0, vmax=1, cmap='gray_r', origin='lower')
-    for bbox, angle in zip(bboxes, angles):
-        plt.gca().add_patch(matplotlib.patches.Rectangle(
-            (bbox[0]*w, bbox[1]*h), (bbox[2]-bbox[0])*w, (bbox[3]-bbox[1])*h,
-            angle=(3*np.pi/2-angle)*180/np.pi, rotation_point='center',
-            linewidth=1, edgecolor='r', facecolor='none'))
+from matplotlib.patches import Rectangle
 
 class KITTI(torch.utils.data.Dataset):
     # Only loads cars, loads velodyne and labels in camera coordinates
@@ -28,26 +11,26 @@ class KITTI(torch.utils.data.Dataset):
     mins = np.array([[-44.1], [-2.2], [-0.2]])
     maxs = np.array([[39.9], [4.1], [86.2]])
 
-    def __init__(self, root):
+    def __init__(self, root, transforms=[]):
         self.root = os.path.join(root, 'kitti', 'object', 'training')
         self.fnames = [f[:-4] for f in sorted(os.listdir(os.path.join(self.root, 'label_2')))]
+        self.transforms = transforms
 
     def __len__(self):
         return len(self.fnames)
 
     def __getitem__(self, i):
         fname = self.fnames[i]
-        # labels variables
+        # labels file
         # dimensions  3D object dimensions: height, width, length (in meters)
         # location    3D object location x,y,z in camera coordinates (in meters)
         # rotation_y  Rotation ry around Y-axis in camera coordinates [-pi..pi]
         labels_fname = os.path.join(self.root, 'label_2', f'{fname}.txt')
         labels = pd.read_csv(labels_fname, sep=' ', header=None)
         ix = labels.iloc[:, 0] == 'Car'  # filter only cars
-        bboxes = labels.loc[ix, 4:7].to_numpy()
-        dimensions = labels.loc[ix, 8:10].to_numpy().T
-        locations = labels.loc[ix, 11:13].to_numpy().T
-        rotations_y = labels.loc[ix, 14].to_numpy()
+        dimensions = labels.loc[ix, 8:10].to_numpy()
+        locations = labels.loc[ix, 11:13].to_numpy()
+        angles = labels.loc[ix, 14].to_numpy()
         # camera calibration
         # we will need this to convert velodyne points -> camera coordinates
         calib_fname = os.path.join(self.root, 'calib', f'{fname}.txt')
@@ -61,68 +44,208 @@ class KITTI(torch.utils.data.Dataset):
         # velodyne points (convert them to camera coordinates)
         points_fname = os.path.join(self.root, 'velodyne', f'{fname}.bin')
         points = np.fromfile(points_fname, dtype=np.float32).reshape(-1, 4)
-        points = points.T  # (N,4) => (4,N)
-        points = project_velodyne_to_camera(points, R0, Tvelo_cam)
-        points = points[:3]  # exclude luminance
-        points = truncate_points(points, self.mins, self.maxs)
-        return points, locations, dimensions, rotations_y
+        points = (R0 @ Tvelo_cam @ points.T).T  # project velodyne -> camera coordinates
+        radiance = points[:, 3]
+        points = points[:, :3]
+        # in the data, the axis order seems to be (X,Z,Y). let's fix that.
+        points = points[:, [0, 2, 1]]
+        locations = locations[:, [0, 2, 1]]
+        dimensions = dimensions[:, [0, 2, 1]]
+        # transformations
+        output = (points, radiance, locations, dimensions, angles)
+        for t in self.transforms:
+            output = t(*output)
+        return output
 
-class DiscretizeTopView(torch.utils.data.Dataset):
-    def __init__(self, ds, img_shape, dict_transform=None):
-        self.ds = ds
-        self.img_shape = img_shape
-        self.dict_transform = dict_transform
+def RandomYRotation(rot_min_deg, rot_max_deg):
+    def f(points, radiance, locations, dimensions, angles):
+        rot = np.random.rand()*(rot_max_deg-rot_min_deg) + rot_min_deg
+        rot = rot*np.pi/180  # to radians
+        cos_angle = np.cos(rot)
+        sin_angle = np.sin(rot)
+        R = np.array(((cos_angle, -sin_angle, 0),
+            (sin_angle, cos_angle, 0), (0, 0, 1)), np.float32)
+        points = np.dot(R, points.T).T
+        locations = np.dot(R, locations.T).T
+        angles -= rot
+        return points, radiance, locations, dimensions, angles
+    return f
 
-    def __len__(self):
-        return len(self.ds)
+def RandomXFlip():
+    def f(points, radiance, locations, dimensions, angles):
+        if np.random.rand() < 0.5:
+            points[:, 0] *= -1
+            locations[:, 0] *= -1
+            angles = np.pi - angles
+        return points, radiance, locations, dimensions, angles
+    return f
 
-    def __getitem__(self, i):
-        points, locations, dimensions, rotations_y = self.ds[i]
-        # locations/dimensions => bboxes x1y1x2y2
-        bboxes = np.concatenate((
-            locations[[0, 2]] - dimensions[[0, 2]]/2,
-            locations[[0, 2]] + dimensions[[0, 2]]/2), 0)
-        # normalize all
-        points = (points-self.ds.mins) / (self.ds.maxs-self.ds.mins)
-        bboxes = (bboxes-self.ds.mins[[0, 2, 0, 2]]) / (self.ds.maxs[[0, 2, 0, 2]]-self.ds.mins[[0, 2, 0, 2]])
-        # points discretization
-        image = np.zeros(self.img_shape, np.float32)
-        image[(self.img_shape[1]*points[2]).astype(int),
-             (self.img_shape[0]*points[0]).astype(int)] = 1
-        d = {'image': image, 'bboxes': bboxes.T, 'angles': rotations_y}
-        if self.dict_transform:
-            d = self.dict_transform(**d)
-        d['image'] = torch.tensor(d['image'])
-        return d
+def DiscretizeBEV(out_shape, limits, ratio_meters2pixels):
+    dL, dW, dH = out_shape
+    xlimits, ylimits, zlimits = limits
+    def f(points, radiance, locations, dimensions, angles):
+        # truncate points outside range
+        # notice that we do not truncate the Z axis because we want to use those
+        # to "add two additional channels to occupancy feature maps to cover
+        # out-of-range points."
+        ix = (points[:, 0] >= xlimits[0]) & (points[:, 0] < xlimits[1]) & \
+            (points[:, 1] >= ylimits[0]) & (points[:, 1] < ylimits[1])
+        points = points[ix]
+        # map poins to indices: (1) normalize them, (2) convert to indices
+        xx = (points[:, 0]-xlimits[0]) / (xlimits[1]-xlimits[0])
+        xx = (xx * dL).astype(int)
+        yy = (points[:, 1]-ylimits[0]) / (ylimits[1]-ylimits[0])
+        yy = (yy * dW).astype(int)
+        zz = (points[:, 2]-zlimits[0]) / (zlimits[1]-zlimits[0])
+        zz = (zz * dH).astype(int)
+        # the following line is to agglomerate out-of-range points at indices 0
+        # and -1 (last).
+        zz = 1 + np.minimum(dH, np.maximum(-1, zz))
+        # features map: the PIXOR paper is unclear how "occupancy" and
+        # "intensity/radiance" is computed, but...
+        # for intensity: they cite a paper that says "The intensity feature is
+        # the reflectance value of the point which has the maximum height in each
+        # cell."
+        # for occupancy: they have a follow-up paper (HDNET) that says "We then
+        # compute *binary* occupancy maps" It seems like they just put 0/1 where
+        # there is a lidar. A unofficial github implementation also did just that.
+        # It's a little confusing because other literature uses ray-tracing and
+        # another algorithm to crease dense occupancy maps.
+        # Also notice that the shape of our features is dH,dW,dL instead of
+        # dL,dW,dH. This is because for matplotib (x=cols, y=rows) and for
+        # pytorch channels come first.
+        height_map = -np.inf * np.ones((dW, dL), np.float32)
+        features = np.zeros((dH+3, dW, dL), np.float32)
+        for x, y, z, r in zip(xx, yy, zz, radiance):
+            features[z, y, x] += 1  # occupancy
+            if features[-1, y, x] != 0 and height_map[y, x] < z:
+                features[-1, y, x] = r  # radiance/intensity
+                height_map[y, x] = max(heigh_map[y, x], z)
+        # need to translate and convert locations (e.g. -40,40 => 0,80 => 0,800)
+        locations[:, 0] = dL * (locations[:, 0]-xlimits[0]) / (xlimits[1]-xlimits[0])
+        locations[:, 1] = dW * (locations[:, 1]-ylimits[0]) / (ylimits[1]-ylimits[0])
+        locations[:, 2] = dH * (locations[:, 2]-zlimits[0]) / (zlimits[1]-zlimits[0])
+        # dimensions conversion from meters to pixels
+        dimensions *= ratio_meters2pixels
+        # ignore z-axis from the labels
+        locations = locations[:, :2]
+        dimensions = dimensions[:, :2]
+        return features, locations, dimensions, angles
+    return f
+
+def ToGrid(feature_shape, grid_shape, ratio_feature2grid):
+    dL, dW = grid_shape
+    cell_L = feature_shape[0]/dL
+    cell_W = feature_shape[1]/dW
+    def f(features, locations, dimensions, angles):
+        grid_scores = np.zeros((1, dW, dL), np.float32)
+        grid_bboxes = np.zeros((6, dW, dL), np.float32)
+        if len(locations) == 0:
+            return features, grid_scores, grid_bboxes
+        yc = (locations[:, 1]*ratio_feature2grid).astype(int)
+        xc = (locations[:, 0]*ratio_feature2grid).astype(int)
+        grid_scores[:, yc, xc] = 1
+        grid_bboxes[0, yc, xc] = np.cos(angles)
+        grid_bboxes[1, yc, xc] = np.sin(angles)
+        grid_bboxes[2, yc, xc] = (locations[:, 0] % cell_L) / cell_L
+        grid_bboxes[3, yc, xc] = (locations[:, 1] % cell_W) / cell_W
+        grid_bboxes[4, yc, xc] = np.log(dimensions[:, 0])
+        grid_bboxes[5, yc, xc] = np.log(dimensions[:, 1])
+        return features, grid_scores, grid_bboxes
+    return f
+
+def ToGrid_Debug(feature_shape, grid_shape, ratio_feature2grid):
+    g = ToGrid(feature_shape, grid_shape, ratio_feature2grid)
+    def f(features, locations, dimensions, angles):
+        return locations, *g(features, locations, dimensions, angles)
+    return f
+
+def inv_scores(scores, threshold):
+    hasobjs = scores >= threshold
+    return scores[hasobjs]
+
+def inv_bboxes(scores, threshold, bboxes, ratio_grid2feature):
+    _, h, w = scores.shape
+    xx = np.arange(0, w, dtype=np.float32)[None, :]
+    yy = np.arange(0, h, dtype=np.float32)[:, None]
+    angles = np.arctan2(bboxes[1], bboxes[0])
+    xc = (xx + bboxes[2]) * ratio_grid2feature
+    yc = (yy + bboxes[3]) * ratio_grid2feature
+    locations = np.stack((xc, yc), -1)
+    dimensions = np.moveaxis(np.exp(bboxes[4:6]), 0, 2)
+    # filter those with objects
+    hasobjs = (scores >= threshold)[0]
+    angles = angles[hasobjs]
+    locations = locations[hasobjs]
+    dimensions = dimensions[hasobjs]
+    return locations, dimensions, angles
+
+def InvGrid_Debug(ratio_grid2feature):
+    def f(locations, features, grid_scores, grid_bboxes):
+        return features, *inv_bboxes(grid_scores, 0.5, grid_bboxes, ratio_grid2feature)
+    return f
 
 # DEBUG
 
-def debug_plot_raw(ds):
-    for i, (points, locations, dimensions, rotations_y) in enumerate(ds):
-        if i >= 20: break
-        points, locations, dimensions, rotations_y = ds[i]
-        plt.clf()
-        plt.scatter(points[0], points[2], s=1, c='k')
-        plt.scatter(locations[0], locations[2], s=10, c='g')
-        for loc, size, roty in zip(locations.T, dimensions.T, rotations_y):
-            rect = matplotlib.patches.Rectangle((loc[0]-size[0]/2, loc[2]-size[2]/2), size[0], size[2], angle=(np.pi/2-roty)*180/np.pi, rotation_point='center', linewidth=1, edgecolor='r', facecolor='none')
-            plt.gca().add_patch(rect)
-        plt.title(f'#objects: {locations.shape[1]}')
-        plt.savefig(f'raw-{i:02d}.png')
+def draw_raw(points, radiance, locations, dimensions, angles):
+    plt.scatter(points[:, 0], points[:, 1], s=1, c='k')
+    plt.scatter(locations[:, 0], locations[:, 1], s=10, c='g')
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    for loc, dim, angle in zip(locations, dimensions, angles):
+        angle_deg = (np.pi/2-angle)*180/np.pi
+        bx, by = loc[0]-dim[0]/2, loc[1]-dim[1]/2
+        plt.gca().add_patch(Rectangle((bx, by), dim[0], dim[1],
+            angle=angle_deg, rotation_point='center', linewidth=1,
+            edgecolor='r', facecolor='none'))
 
-def debug_plot_topview(ds):
-    for i, d in enumerate(ds):
-        if i >= 20: break
-        plt.clf()
-        plot_topview(d['image'], d['bboxes'], d['angles'])
-        plt.title(f'#objects: {d["bboxes"].shape[0]}')
-        plt.savefig(f'topview-{i:02d}.png')
+def draw_topview(features, locations, dimensions, angles):
+    image = np.any(features[:35+2] >= 0.5, 0)
+    plt.imshow(image, cmap='gray_r', origin='lower', vmin=0, vmax=1)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    for loc, dim, angle in zip(locations, dimensions, angles):
+        bx, by = loc[0]-dim[0]/2, loc[1]-dim[1]/2
+        angle_deg = (3*np.pi/2-angle)*180/np.pi
+        plt.gca().add_patch(Rectangle((bx, by), dim[0], dim[1],
+            angle=angle_deg, rotation_point='center', linewidth=1,
+            edgecolor='r', facecolor='none'))
+
+def draw_grid(locations, features, grid_scores, grid_bboxes):
+    image = np.any(features[:35+2], 0)
+    plt.imshow(image, cmap='gray_r', origin='lower', vmin=0, vmax=1)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    ih, iw = image.shape
+    _, gh, gw = grid_scores.shape
+    plt.vlines(np.linspace(0, iw, gw+1), 0, ih, color='gray', lw=1, alpha=0.25)
+    plt.hlines(np.linspace(0, ih, gh+1), 0, iw, color='gray', lw=1, alpha=0.25)
+    plt.scatter(locations[:, 0], locations[:, 1], s=8, c='g')
+    for i in range(gw):
+        for j in range(gh):
+            if grid_scores[0, j, i] >= 0.5:
+                _, _, ox, oy, _, _ = grid_bboxes[:, j, i]
+                plt.text(i*iw/gw, j*ih/gh, f'{ox:.2f},{oy:.2f}', c='b')
 
 if __name__ == '__main__':
-    import matplotlib
-    plt.rcParams['figure.figsize'] = (20, 20)
-    matplotlib.use('Agg')
-    ds = KITTI('/data')
-    debug_plot_raw(ds)
-    ds = DiscretizeTopView(ds, (512, 512))
-    debug_plot_topview(ds)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('steps', type=int)
+    args = parser.parse_args()
+    transforms = [
+        RandomYRotation(-5, 5),
+        RandomXFlip(),
+        DiscretizeBEV((800, 700, 35), ((-40, 40), (0, 70), (-2.5, 1)), 10),
+        ToGrid_Debug((800, 700), (200, 175), 200/800),
+        InvGrid_Debug(800/200),
+    ]
+    draw = [draw_raw, draw_raw, draw_raw, draw_topview, draw_grid, draw_topview]
+    assert args.steps < len(transforms), f'steps = [0,{len(transforms)-1}]'
+    transforms = transforms[:args.steps]
+    draw = draw[args.steps]
+    ds = KITTI('data', transforms)
+    for i, d in enumerate(ds):
+        if i >= 8: break
+        plt.subplot(2, 4, i+1)
+        draw(*d)
+    plt.show()

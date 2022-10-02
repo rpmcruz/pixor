@@ -13,8 +13,11 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 ########################## DATA ##########################
 
-ds = mydata.DiscretizeTopView(mydata.KITTI(args.datadir), (512, 512))
-tr = torch.utils.data.DataLoader(ds, 16, True, collate_fn=od.utils.collate_fn)
+transforms = [
+    mydata.DiscretizeBEV((800, 700, 35), ((-40, 40), (0, 70), (-2.5, 1)), 10),
+    mydata.ToGrid((800, 700), (200, 175), 200/800),
+]
+ds = mydata.KITTI(args.datadir, transforms)
 
 ########################## MODEL ##########################
 
@@ -23,10 +26,12 @@ model = torch.load(args.model, map_location=device)
 ########################## TRAIN ##########################
 
 model.eval()
-images = torch.stack([ds[i]['image'] for i in range(16)])
-batch_bboxes, batch_angles = model(imgs.to(device))
+batch_features = torch.stack([ds[i][0] for i in range(16)]).to(device)
+with torch.no_grad():
+    list_scores, list_bboxes = model(features)
 
-for i, (image, bboxes, angles) in enumerate(zip(images, batch_bboxes, batch_angles)):
+for i, (features, (locations, dimensions, angles)) in enumerate(zip(
+        batch_features, list_bboxes)):
     plt.subplot(4, 4, i+1)
-    mydata.plot_topview(image, bboxes, angles)
+    mydata.draw_topview(features, locations, dimensions, angles)
 plt.show()

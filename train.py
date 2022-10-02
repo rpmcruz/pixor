@@ -6,44 +6,43 @@ parser.add_argument('--epochs', type=int, default=50)
 args = parser.parse_args()
 
 import torch
+import torchvision
 from tqdm import tqdm
-import objdetect as od
 import mydata, mymodels
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 ########################## DATA ##########################
 
-grid_size = (14, 14)
-ds = mydata.DiscretizeTopView(mydata.KITTI(args.datadir), (512, 512))
-tr = torch.utils.data.DataLoader(ds, 16, True, collate_fn=od.utils.collate_fn)
+transforms = [
+    mydata.RandomYRotation(-5, 5),
+    mydata.RandomXFlip(),
+    mydata.DiscretizeBEV((800, 700, 35), ((-40, 40), (0, 70), (-2.5, 1)), 10),
+    mydata.ToGrid((800, 700), (200, 175), 200/800),
+]
+ds = mydata.KITTI(args.datadir, transforms)
+tr = torch.utils.data.DataLoader(ds, 8, True, num_workers=4, pin_memory=True)
 
 ########################## MODEL ##########################
 
-model = mymodels.Pixor().to(device)
-scores_loss = torch.nn.BCEWithLogitsLoss()
-bboxes_loss = torch.nn.MSELoss(reduction='none')
-angles_loss = torch.nn.MSELoss(reduction='none')
-optimizer = torch.optim.Adam(model.parameters())
+model = mymodels.Pixor(200/800).to(device)
+cls_loss = torchvision.ops.sigmoid_focal_loss
+reg_loss = torch.nn.SmoothL1Loss(reduction='none')
+optimizer = torch.optim.Adam(model.parameters(), 1e-4)
 
 ########################## TRAIN ##########################
 
 model.train()
 for epoch in range(args.epochs):
     avg_loss = 0
-    for imgs, targets in tqdm(tr):
-        imgs = imgs.to(device)[:, None]
-        preds_scores, preds_bboxes, preds_angles = model(imgs)
-
-        slices = od.grid.slices_center_locations(*grid_size, targets['bboxes'])
-        scores = od.grid.scores(*grid_size, slices, device=device)
-        bboxes = od.grid.offset_logsize_bboxes(*grid_size, slices, targets['bboxes'], device=device)
-        angles = mymodels.grid_angles(*grid_size, slices, targets['angles'], device=device)
-
+    for features, grid_scores, grid_bboxes in tqdm(tr):
+        features = features.to(device)
+        grid_scores = grid_scores.to(device)
+        grid_bboxes = grid_bboxes.to(device)
+        preds_scores, preds_bboxes = model(features)
         loss_value = \
-            scores_loss(preds_scores, scores) + \
-            (scores * bboxes_loss(preds_bboxes, bboxes)).mean() + \
-            (scores * angles_loss(preds_angles, angles)).mean()
+            cls_loss(preds_scores, grid_scores).mean() + \
+            (grid_scores * reg_loss(preds_bboxes, grid_bboxes)).mean()
         optimizer.zero_grad()
         loss_value.backward()
         optimizer.step()
