@@ -106,9 +106,9 @@ class Pixor(torch.nn.Module):
         if not self.training:
             # when in evaluation mode, convert the output grid back into list
             scores = torch.sigmoid(scores)
-            scores = scores.numpy()
-            bboxes = bboxes.numpy()
-            scores = [inv_scores(ss, threshold) for ss in scores]
-            bboxes = [inv_bboxes(ss, threshold, bb, self.ratio_grid2feature)
+            scores = scores.cpu().numpy()
+            bboxes = bboxes.cpu().numpy()
+            bboxes = [mydata.inv_bboxes(ss, threshold, bb, self.ratio_grid2feature)
                 for ss, bb in zip(scores, bboxes)]
+            scores = [mydata.inv_scores(ss, threshold) for ss in scores]
         return scores, bboxes
