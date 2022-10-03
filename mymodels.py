@@ -97,8 +97,15 @@ class Pixor(torch.nn.Module):
         x = self.header(x)
         scores = self.scores(x)
         bboxes = self.bboxes(x)
+        # the paper does not mention this, but I think it's common for YOLO-based
+        # models to restrict the output of some of the bounding boxes outputs.
+        # sin/cosine is [-1,1] => tanh. offset is [0,1] => logistic.
+        # nothing for dimension since it's in log-space.
+        bboxes[:, 0:2] = torch.tanh(bboxes[:, 0:2])
+        bboxes[:, 2:4] = torch.sigmoid(bboxes[:, 2:4])
         if not self.training:
             # when in evaluation mode, convert the output grid back into list
+            scores = torch.sigmoid(scores)
             scores = scores.numpy()
             bboxes = bboxes.numpy()
             scores = [inv_scores(ss, threshold) for ss in scores]

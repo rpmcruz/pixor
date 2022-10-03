@@ -8,9 +8,6 @@ from matplotlib.patches import Rectangle
 class KITTI(torch.utils.data.Dataset):
     # Only loads cars, loads velodyne and labels in camera coordinates
 
-    mins = np.array([[-44.1], [-2.2], [-0.2]])
-    maxs = np.array([[39.9], [4.1], [86.2]])
-
     def __init__(self, root, transforms=[]):
         self.root = os.path.join(root, 'kitti', 'object', 'training')
         self.fnames = [f[:-4] for f in sorted(os.listdir(os.path.join(self.root, 'label_2')))]
@@ -118,18 +115,23 @@ def DiscretizeBEV(out_shape, limits, ratio_meters2pixels):
         features = np.zeros((dH+3, dW, dL), np.float32)
         for x, y, z, r in zip(xx, yy, zz, radiance):
             features[z, y, x] += 1  # occupancy
-            if features[-1, y, x] != 0 and height_map[y, x] < z:
+            if height_map[y, x] < z:
                 features[-1, y, x] = r  # radiance/intensity
-                height_map[y, x] = max(heigh_map[y, x], z)
-        # need to translate and convert locations (e.g. -40,40 => 0,80 => 0,800)
-        locations[:, 0] = dL * (locations[:, 0]-xlimits[0]) / (xlimits[1]-xlimits[0])
-        locations[:, 1] = dW * (locations[:, 1]-ylimits[0]) / (ylimits[1]-ylimits[0])
-        locations[:, 2] = dH * (locations[:, 2]-zlimits[0]) / (zlimits[1]-zlimits[0])
-        # dimensions conversion from meters to pixels
+                height_map[y, x] = z
+        # convert locations/dimensions: meters => pixels
+        # in the case of locations, translation necessary (e.g. -40,40 => 0,80 => 0,800)
+        locations[:, 0] = (locations[:, 0]-xlimits[0]) * ratio_meters2pixels
+        locations[:, 1] = (locations[:, 1]-ylimits[0]) * ratio_meters2pixels
+        locations[:, 2] = (locations[:, 2]-zlimits[0]) * ratio_meters2pixels
         dimensions *= ratio_meters2pixels
         # ignore z-axis from the labels
         locations = locations[:, :2]
         dimensions = dimensions[:, :2]
+        # filter labels outside view
+        ix = np.all(np.logical_and(locations >= 0, locations < np.array([[dL, dW]])), 1)
+        locations = locations[ix]
+        dimensions = dimensions[ix]
+        angles = angles[ix]
         return features, locations, dimensions, angles
     return f
 
@@ -144,6 +146,11 @@ def ToGrid(feature_shape, grid_shape, ratio_feature2grid):
             return features, grid_scores, grid_bboxes
         yc = (locations[:, 1]*ratio_feature2grid).astype(int)
         xc = (locations[:, 0]*ratio_feature2grid).astype(int)
+        # a minor difference is that our dx/dy offset is relative to the cell
+        # top/left corner, not the center.
+        # the paper also says "[t]he learning target [bboxes] [...] is normalized
+        # before-hand over the training set to have zero mean and unit variance."
+        # the values are already small, so I don't normalize.
         grid_scores[:, yc, xc] = 1
         grid_bboxes[0, yc, xc] = np.cos(angles)
         grid_bboxes[1, yc, xc] = np.sin(angles)
@@ -243,7 +250,7 @@ if __name__ == '__main__':
     assert args.steps < len(transforms), f'steps = [0,{len(transforms)-1}]'
     transforms = transforms[:args.steps]
     draw = draw[args.steps]
-    ds = KITTI('data', transforms)
+    ds = KITTI('/data', transforms)
     for i, d in enumerate(ds):
         if i >= 8: break
         plt.subplot(2, 4, i+1)
