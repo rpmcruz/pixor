@@ -7,6 +7,7 @@ args = parser.parse_args()
 
 import torch
 import torchvision
+from time import time
 from tqdm import tqdm
 import mydata, mymodels
 
@@ -34,8 +35,9 @@ optimizer = torch.optim.Adam(model.parameters(), 1e-4)
 
 model.train()
 for epoch in range(args.epochs):
+    tic = time()
     avg_loss = 0
-    for features, grid_scores, grid_bboxes in tqdm(tr):
+    for features, grid_scores, grid_bboxes in tr: #tqdm(tr):
         features = features.to(device)
         grid_scores = grid_scores.to(device)
         grid_bboxes = grid_bboxes.to(device)
@@ -47,6 +49,7 @@ for epoch in range(args.epochs):
         loss_value.backward()
         optimizer.step()
         avg_loss += float(loss_value) / len(tr)
-    print(f'Epoch {epoch+1}/{args.epochs} - Avg loss: {avg_loss}')
+    toc = time()
+    print(f'Epoch {epoch+1}/{args.epochs} - {toc-tic:.0f}s - Avg loss: {avg_loss}')
 
 torch.save(model.cpu(), args.output)
