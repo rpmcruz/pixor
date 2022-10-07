@@ -26,12 +26,14 @@ model = torch.load(args.model, map_location=device)
 ########################## TRAIN ##########################
 
 model.eval()
-batch_features = torch.stack([ds[i][0] for i in range(16)]).to(device)
+batch_features = torch.stack([torch.tensor(ds[i][0]) for i in range(16)]).to(device)
 with torch.no_grad():
-    list_scores, list_bboxes = model(features)
+    list_scores, list_bboxes = model(batch_features)
 
 for i, (features, (locations, dimensions, angles)) in enumerate(zip(
         batch_features, list_bboxes)):
     plt.subplot(4, 4, i+1)
+    features = features.cpu().numpy()
     mydata.draw_topview(features, locations, dimensions, angles)
+    plt.title(f'objects: {len(locations)}')
 plt.show()
