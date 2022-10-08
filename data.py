@@ -188,14 +188,6 @@ def inv_bboxes(scores, threshold, bboxes, ratio_grid2feature):
     dimensions = dimensions[hasobjs]
     return locations, dimensions, angles
 
-def InvGrid(ratio_grid2feature):
-    def f(batch_grid_scores, batch_grid_bboxes):
-        scores = [mydata.inv_scores(ss, threshold) for ss in batch_grid_scores]
-        bboxes = [mydata.inv_bboxes(ss, threshold, bb, ratio_grid2feature)
-            for ss, bb in zip(batch_grid_scores, batch_grid_bboxes)]
-        return scores, bboxes
-    return f
-
 def InvGrid_Debug(ratio_grid2feature):
     def f(locations, features, grid_scores, grid_bboxes):
         return features, *inv_bboxes(grid_scores, 0.5, grid_bboxes, ratio_grid2feature)

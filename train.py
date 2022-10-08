@@ -26,7 +26,7 @@ tr = torch.utils.data.DataLoader(ds, 8, True, num_workers=4, pin_memory=True)
 
 ########################## MODEL ##########################
 
-model = model.Pixor(data.InvGrid(800/200)).to(device)
+model = model.Pixor(800/200).to(device)
 cls_loss = torchvision.ops.sigmoid_focal_loss
 reg_loss = torch.nn.SmoothL1Loss(reduction='none')
 optimizer = torch.optim.Adam(model.parameters(), 1e-4)
