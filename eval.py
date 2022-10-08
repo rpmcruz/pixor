@@ -36,5 +36,5 @@ for i, (pred_locs, pred_dims, pred_angles) in enumerate(list_bboxes):
     features, gt_locs, gt_dims, gt_angles = ds[i]
     data.draw_topview(features, gt_locs, gt_dims, gt_angles)
     data.draw_topview(None, pred_locs, pred_dims, pred_angles, 'g')
-    plt.title(f'predicted: {len(pred_locs)}, truth: {len(gt_locs)}')
+    plt.title(f'{i} predicted: {len(pred_locs)}, truth: {len(gt_locs)}')
 plt.show()

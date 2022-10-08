@@ -112,5 +112,5 @@ class Pixor(torch.nn.Module):
                 for ss, bb in zip(scores, bboxes)]
             scores = [data.inv_scores(ss, threshold) for ss in scores]
             for i in range(len(scores)):
-                scores[i], bboxes[i] = nms.NMS(scores[i], bboxes[i])
+                scores[i], bboxes[i] = nms.NMS(scores[i], *bboxes[i])
         return scores, bboxes

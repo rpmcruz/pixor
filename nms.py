@@ -13,15 +13,16 @@ def IoU(bbox1, bbox2):
     union = p1.area + p2.area - intersection
     return intersection / union
 
-def NMS(scores, bboxes, lambda_nms=0.5):
+def NMS(scores, locs, dims, angles, lambda_nms=0.5):
     ix = [
         not any(  # discard if all conditions met
             i != j and
             scores[j] > scores[i] and
-            IoU(bboxes[i], bboxes[j]) >= lambda_nms
-            for j in range(len(bboxes)))
-        for i in range(len(bboxes))]
-    return scores[ix], bboxes[ix]
+            IoU((locs[i], dims[i], angles[i]),
+                (locs[j], dims[j], angles[j])) >= lambda_nms
+            for j in range(len(scores)))
+        for i in range(len(scores))]
+    return scores[ix], (locs[ix], dims[ix], angles[ix])
 
 if __name__ == '__main__':  # debug our polygon conversion function
     import matplotlib.pyplot as plt
