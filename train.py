@@ -19,7 +19,7 @@ transforms = [
     mydata.RandomYRotation(-5, 5),
     mydata.RandomXFlip(),
     mydata.DiscretizeBEV((800, 700, 35), ((-40, 40), (0, 70), (-2.5, 1)), 10),
-    mydata.ToGrid((800, 700), (200, 175), 200/800),
+    mydata.ToGrid((800, 700), (200, 175), 800/200),
 ]
 ds = mydata.KITTI(args.datadir, transforms)
 tr = torch.utils.data.DataLoader(ds, 8, True, num_workers=4, pin_memory=True)

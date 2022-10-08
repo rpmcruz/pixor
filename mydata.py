@@ -206,17 +206,18 @@ def draw_raw(points, radiance, locations, dimensions, angles):
             angle=angle_deg, rotation_point='center', linewidth=1,
             edgecolor='r', facecolor='none'))
 
-def draw_topview(features, locations, dimensions, angles):
-    image = np.any(features[:35+2] >= 0.5, 0)
-    plt.imshow(image, cmap='gray_r', origin='lower', vmin=0, vmax=1)
-    plt.xlabel('X')
-    plt.ylabel('Y')
+def draw_topview(features, locations, dimensions, angles, bc='r'):
+    if features is not None:
+        image = np.any(features[:35+2] >= 0.5, 0)
+        plt.imshow(image, cmap='gray_r', origin='lower', vmin=0, vmax=1)
+        plt.xlabel('X')
+        plt.ylabel('Y')
     for loc, dim, angle in zip(locations, dimensions, angles):
         bx, by = loc[0]-dim[0]/2, loc[1]-dim[1]/2
         angle_deg = (3*np.pi/2-angle)*180/np.pi
         plt.gca().add_patch(Rectangle((bx, by), dim[0], dim[1],
             angle=angle_deg, rotation_point='center', linewidth=1,
-            edgecolor='r', facecolor='none'))
+            edgecolor=bc, facecolor='none'))
 
 def draw_grid(locations, features, grid_scores, grid_bboxes):
     image = np.any(features[:35+2], 0)
