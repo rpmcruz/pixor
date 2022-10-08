@@ -25,11 +25,11 @@ def NMS(scores, bboxes, lambda_nms=0.5):
 
 if __name__ == '__main__':  # debug our polygon conversion function
     import matplotlib.pyplot as plt
-    import mydata
-    transforms = [mydata.DiscretizeBEV((800, 700, 35), ((-40, 40), (0, 70), (-2.5, 1)), 10)]
-    ds = mydata.KITTI('/data', transforms)
+    import data
+    transforms = [data.DiscretizeBEV((800, 700, 35), ((-40, 40), (0, 70), (-2.5, 1)), 10)]
+    ds = data.KITTI('/data', transforms)
     features, locations, dimensions, angles = ds[6]
-    mydata.draw_topview(features, locations, dimensions, angles)
+    data.draw_topview(features, locations, dimensions, angles)
     for loc, dim, angle in zip(locations, dimensions, angles):
         p = polygon(loc, dim, angle)
         plt.plot(*p.exterior.xy, c='green')

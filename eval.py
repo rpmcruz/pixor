@@ -8,17 +8,17 @@ args = parser.parse_args()
 import torch
 import matplotlib.pyplot as plt
 import objdetect as od
-import mydata
+import data
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 ########################## DATA ##########################
 
 transforms = [
-    mydata.DiscretizeBEV((800, 700, 35), ((-40, 40), (0, 70), (-2.5, 1)), 10),
+    data.DiscretizeBEV((800, 700, 35), ((-40, 40), (0, 70), (-2.5, 1)), 10),
 ]
-to_grid = mydata.ToGrid((800, 700), (200, 175), 200/800)
-ds = mydata.KITTI(args.datadir, transforms)
+to_grid = data.ToGrid((800, 700), (200, 175), 200/800)
+ds = data.KITTI(args.datadir, transforms)
 
 ########################## MODEL ##########################
 
@@ -34,7 +34,7 @@ with torch.no_grad():
 for i, (pred_locs, pred_dims, pred_angles) in enumerate(list_bboxes):
     plt.subplot(4, 4, i+1)
     features, gt_locs, gt_dims, gt_angles = ds[i]
-    mydata.draw_topview(features, gt_locs, gt_dims, gt_angles)
-    mydata.draw_topview(None, pred_locs, pred_dims, pred_angles, 'g')
+    data.draw_topview(features, gt_locs, gt_dims, gt_angles)
+    data.draw_topview(None, pred_locs, pred_dims, pred_angles, 'g')
     plt.title(f'predicted: {len(pred_locs)}, truth: {len(gt_locs)}')
 plt.show()
