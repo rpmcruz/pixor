@@ -47,7 +47,8 @@ class KITTI(torch.utils.data.Dataset):
         # in the data, the axis order seems to be (X,Z,Y). let's fix that.
         points = points[:, [0, 2, 1]]
         locations = locations[:, [0, 2, 1]]
-        dimensions = dimensions[:, [0, 2, 1]]
+        dimensions = dimensions[:, [2, 0, 1]]  # length=X, width=Y, height=Z
+        angles = -angles  # it seems the angle goes clockwise (fix it)
         # transformations
         output = (points, radiance, locations, dimensions, angles)
         for t in self.transforms:
@@ -187,6 +188,14 @@ def inv_bboxes(scores, threshold, bboxes, ratio_grid2feature):
     dimensions = dimensions[hasobjs]
     return locations, dimensions, angles
 
+def InvGrid(ratio_grid2feature):
+    def f(batch_grid_scores, batch_grid_bboxes):
+        scores = [mydata.inv_scores(ss, threshold) for ss in batch_grid_scores]
+        bboxes = [mydata.inv_bboxes(ss, threshold, bb, ratio_grid2feature)
+            for ss, bb in zip(batch_grid_scores, batch_grid_bboxes)]
+        return scores, bboxes
+    return f
+
 def InvGrid_Debug(ratio_grid2feature):
     def f(locations, features, grid_scores, grid_bboxes):
         return features, *inv_bboxes(grid_scores, 0.5, grid_bboxes, ratio_grid2feature)
@@ -200,11 +209,12 @@ def draw_raw(points, radiance, locations, dimensions, angles):
     plt.xlabel('X')
     plt.ylabel('Y')
     for loc, dim, angle in zip(locations, dimensions, angles):
-        angle_deg = (np.pi/2-angle)*180/np.pi
+        angle_deg = angle*180/np.pi
         bx, by = loc[0]-dim[0]/2, loc[1]-dim[1]/2
         plt.gca().add_patch(Rectangle((bx, by), dim[0], dim[1],
             angle=angle_deg, rotation_point='center', linewidth=1,
             edgecolor='r', facecolor='none'))
+        plt.text(loc[0], loc[1], str(int(angle_deg)), c='b')
 
 def draw_topview(features, locations, dimensions, angles, bc='r'):
     if features is not None:
@@ -214,7 +224,7 @@ def draw_topview(features, locations, dimensions, angles, bc='r'):
         plt.ylabel('Y')
     for loc, dim, angle in zip(locations, dimensions, angles):
         bx, by = loc[0]-dim[0]/2, loc[1]-dim[1]/2
-        angle_deg = (3*np.pi/2-angle)*180/np.pi
+        angle_deg = angle*180/np.pi
         plt.gca().add_patch(Rectangle((bx, by), dim[0], dim[1],
             angle=angle_deg, rotation_point='center', linewidth=1,
             edgecolor=bc, facecolor='none'))

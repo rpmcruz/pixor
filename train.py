@@ -19,14 +19,14 @@ transforms = [
     mydata.RandomYRotation(-5, 5),
     mydata.RandomXFlip(),
     mydata.DiscretizeBEV((800, 700, 35), ((-40, 40), (0, 70), (-2.5, 1)), 10),
-    mydata.ToGrid((800, 700), (200, 175), 800/200),
+    mydata.ToGrid((800, 700), (200, 175), 200/800),
 ]
 ds = mydata.KITTI(args.datadir, transforms)
 tr = torch.utils.data.DataLoader(ds, 8, True, num_workers=4, pin_memory=True)
 
 ########################## MODEL ##########################
 
-model = mymodels.Pixor(200/800).to(device)
+model = mymodels.Pixor(mydata.InvGrid(800/200)).to(device)
 cls_loss = torchvision.ops.sigmoid_focal_loss
 reg_loss = torch.nn.SmoothL1Loss(reduction='none')
 optimizer = torch.optim.Adam(model.parameters(), 1e-4)

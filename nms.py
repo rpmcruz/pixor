@@ -2,13 +2,8 @@ import numpy as np
 from shapely.geometry import Polygon
 
 def polygon(loc, dim, angle):
-    print('angle:', angle)
     M = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
-    print('pre dim:', dim)
-    dim = dim[::-1]
-    dim = M @ (dim/2)
-    print('rot dim:', dim)
-    corners = [loc + dim*np.array(s) for s in ((-1, -1), (-1, 1), (1, 1), (1, -1))]
+    corners = [loc + (M @ (np.array(s)*dim/2)) for s in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
     return Polygon(corners)
 
 def IoU(bbox1, bbox2):

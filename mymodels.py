@@ -1,7 +1,7 @@
 import torch
 import torchvision
 from torch.nn.functional import relu
-import mydata
+import nms
 
 # Our hero: PIXOR https://arxiv.org/abs/1902.06326
 # There are slight variations on resblocks. I followed the citation from PIXOR
@@ -55,9 +55,9 @@ class Upsample(torch.nn.Module):
         return left + above
 
 class Pixor(torch.nn.Module):
-    def __init__(self, ratio_grid2feature):
+    def __init__(self, inv_grid):
         super().__init__()
-        self.ratio_grid2feature = ratio_grid2feature
+        self.inv_grid = inv_grid
         self.block1 = torch.nn.Sequential(
             # PIXOR paper has a typo in the diagram (the input has 36 channels,
             # but it's clear from the text that the input channels is 38).
@@ -108,7 +108,7 @@ class Pixor(torch.nn.Module):
             scores = torch.sigmoid(scores)
             scores = scores.cpu().numpy()
             bboxes = bboxes.cpu().numpy()
-            bboxes = [mydata.inv_bboxes(ss, threshold, bb, self.ratio_grid2feature)
-                for ss, bb in zip(scores, bboxes)]
-            scores = [mydata.inv_scores(ss, threshold) for ss in scores]
+            scores, bboxes = self.inv_grid(scores, bboxes)
+            for i in range(len(scores)):
+                scores[i], bboxes[i] = nms.NMS(scores[i], bboxes[i])
         return scores, bboxes
